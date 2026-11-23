@@ -540,17 +540,32 @@ if manz is not None:
 folium.GeoJson(to_ll(iso_new).__geo_interface__, name="Isócrona nueva",
                style_function=lambda f: dict(color="#e63946", fillColor="#e63946", fillOpacity=0.25)).add_to(m)
 folium.Marker([nw.lat, nw.lon], tooltip=f"NUEVA: {sel}", icon=folium.Icon(color="red", icon="star")).add_to(m)
-for r in rows:
-    folium.GeoJson(to_ll(r["iso"]).__geo_interface__, style_function=lambda f: dict(color="#1d6fd6", fillColor="#1d6fd6", fillOpacity=0.2)).add_to(m)
-    ll = to_ll(r["pt"])
-    folium.Marker([ll.y, ll.x], tooltip=f"{r['nombre']} – {r['dist']:.0f} m", icon=folium.Icon(color="blue", icon="shopping-cart")).add_to(m)
-    folium.PolyLine([[nw.lat, nw.lon], [ll.y, ll.x]], color="black", weight=2, dash_array="6",
-                    tooltip=f"{r['dist']:.0f} m").add_to(m)
-ids_traslape = {r["id"] for r in rows}
+row_by_id = {str(r["id"]): r for r in rows}
 for _, t in near5.iterrows():
-    if t.id not in ids_traslape:
-        folium.Marker([t.lat, t.lon], tooltip=f"{t.nombre} – {t.dist:.0f} m (sin traslape)", icon=folium.Icon(color="gray", icon="shopping-cart")).add_to(m)
-        folium.PolyLine([[nw.lat, nw.lon], [t.lat, t.lon]], color="gray", weight=1, dash_array="4", tooltip=f"{t.dist:.0f} m").add_to(m)
+    r = row_by_id.get(str(t.id))
+    color = "blue" if r else "gray"
+    line_color = "#1d6fd6" if r else "#777777"
+    line_style = "6" if r else "4"
+    label = "con traslape" if r else "sin traslape"
+    folium.Marker(
+        [t.lat, t.lon],
+        tooltip=f"{t.nombre} · {t.dist:.0f} m · {label}",
+        popup=folium.Popup(f"<b>{t.nombre}</b><br>Distancia: {t.dist:.0f} m<br>{label.title()}", max_width=260),
+        icon=folium.Icon(color=color, icon="shopping-cart"),
+    ).add_to(m)
+    folium.PolyLine(
+        [[nw.lat, nw.lon], [t.lat, t.lon]],
+        color=line_color, weight=3 if r else 2, dash_array=line_style,
+        tooltip=f"Distancia a {t.nombre}: {t.dist:.0f} m",
+    ).add_to(m)
+    mid_lat, mid_lon = (nw.lat + t.lat) / 2, (nw.lon + t.lon) / 2
+    folium.Marker(
+        [mid_lat, mid_lon],
+        icon=folium.DivIcon(html=f'<div style="font-size:11px;font-weight:700;color:{line_color};background:white;border:1px solid {line_color};border-radius:4px;padding:2px 4px;white-space:nowrap">{t.dist:.0f} m</div>'),
+    ).add_to(m)
+    if r:
+        folium.GeoJson(to_ll(r["iso"]).__geo_interface__, name=f"Isócrona {t.nombre}",
+                       style_function=lambda f: dict(color="#1d6fd6", fillColor="#1d6fd6", fillOpacity=0.2)).add_to(m)
 folium.LayerControl().add_to(m)
 st_folium(m, height=520, use_container_width=True, returned_objects=[])
 
