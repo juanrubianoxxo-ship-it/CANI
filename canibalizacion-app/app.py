@@ -352,7 +352,8 @@ def static_map(new_pt, iso_new, rows, new_name):
     gpd.GeoSeries([iso_new], crs=CRS_M).to_crs(3857).plot(ax=ax, color="#e63946", alpha=0.25, edgecolor="#e63946", linewidth=2)
     xs, ys = [], []
     for r in rows:
-        gpd.GeoSeries([r["iso"]], crs=CRS_M).to_crs(3857).plot(ax=ax, color="#1d6fd6", alpha=0.25, edgecolor="#1d6fd6", linewidth=2)
+        color = r.get("color", "#1d6fd6")
+        gpd.GeoSeries([r["iso"]], crs=CRS_M).to_crs(3857).plot(ax=ax, color=color, alpha=0.25, edgecolor=color, linewidth=2)
         a = gpd.GeoSeries([new_pt, r["pt"]], crs=CRS_M).to_crs(3857)
         ax.plot([a[0].x, a[1].x], [a[0].y, a[1].y], "k--", lw=1.2)
         ax.annotate(f"{r['dist']:.0f} m", ((a[0].x + a[1].x) / 2, (a[0].y + a[1].y) / 2), fontsize=9, weight="bold",
@@ -557,6 +558,7 @@ up_real = st.file_uploader("(Opcional) Isócronas reales de encuesta O-D (GeoJSO
 real = gpd.read_file(up_real).to_crs(CRS_M) if up_real else None
 
 rows = []
+polygon_colors = ["#2563eb", "#7c3aed", "#0891b2", "#16a34a", "#ea580c", "#db2777", "#ca8a04", "#4f46e5"]
 for _, t in cerca.iterrows():
     iso = align_to_manzanas(make_iso(t.lat, t.lon, radio, modo), manz)
     if real is not None and "id" in real.columns and (real["id"].astype(str) == t.id).any():
@@ -567,17 +569,17 @@ for _, t in cerca.iterrows():
     pe, ve = pop_in(iso, manz, c_pers, c_viv)
     ps, vs = pop_in(inter, manz, c_pers, c_viv)
     share = (ps / pe) if pe and not np.isnan(pe) else inter.area / iso.area
-    rows.append(dict(id=t.id, nombre=t.nombre, pt=t.pt, iso=iso, dist=t.dist, pe=pe, ve=ve, ps=ps, vs=vs, share=share))
+    rows.append(dict(id=t.id, nombre=t.nombre, pt=t.pt, iso=iso, dist=t.dist, pe=pe, ve=ve, ps=ps, vs=vs, share=share,
+                     color=polygon_colors[len(rows) % len(polygon_colors)]))
 
 # --- mapa interactivo ---
 st.subheader("Mapa")
 m = folium.Map(location=[nw.lat, nw.lon], zoom_start=17, tiles="OpenStreetMap")
+manz_map = None
 if manz is not None:
     near = manz[manz.intersects(new_pt.buffer(radio * 3))]
     if not near.empty:
-        n4326 = near.to_crs(4326)[[c_pers, c_viv, "geometry"]]
-        folium.GeoJson(n4326, name="Manzanas DANE", style_function=lambda f: dict(color="#777", weight=1, fillOpacity=0.05),
-                       tooltip=folium.GeoJsonTooltip(fields=[c_pers, c_viv], aliases=["Personas", "Viviendas"])).add_to(m)
+        manz_map = near.to_crs(4326)[[c_pers, c_viv, "geometry"]]
 folium.GeoJson(to_ll(iso_new).__geo_interface__, name="Isócrona nueva",
                style_function=lambda f: dict(color="#e63946", fillColor="#e63946", fillOpacity=0.25)).add_to(m)
 folium.Circle([nw.lat, nw.lon], radius=radio, color="#e63946", weight=2, dash_array="6",
@@ -590,7 +592,7 @@ for _, t in map_stores.iterrows():
     r = row_by_id.get(str(t.id))
     inside = t.dist <= radio
     color = "blue" if inside else "gray"
-    line_color = "#1d6fd6" if inside else "#999999"
+    line_color = r["color"] if r else "#999999"
     line_style = "6" if inside else "2"
     label = "dentro del radio" if inside else "fuera del radio"
     folium.Marker(
@@ -599,19 +601,31 @@ for _, t in map_stores.iterrows():
         popup=folium.Popup(f"<b>{t.nombre}</b><br>Distancia: {t.dist:.0f} m<br>{label.title()}", max_width=260),
         icon=folium.Icon(color=color, icon="shopping-cart"),
     ).add_to(m)
-    folium.PolyLine(
-        [[nw.lat, nw.lon], [t.lat, t.lon]],
-        color=line_color, weight=3 if inside else 1, dash_array=line_style,
-        tooltip=f"Distancia a {t.nombre}: {t.dist:.0f} m",
-    ).add_to(m)
-    mid_lat, mid_lon = (nw.lat + t.lat) / 2, (nw.lon + t.lon) / 2
-    folium.Marker(
-        [mid_lat, mid_lon],
-        icon=folium.DivIcon(html=f'<div style="font-size:11px;font-weight:700;color:{line_color};background:white;border:1px solid {line_color};border-radius:4px;padding:2px 4px;white-space:nowrap">{t.dist:.0f} m</div>'),
-    ).add_to(m)
+    if inside:
+        folium.PolyLine(
+            [[nw.lat, nw.lon], [t.lat, t.lon]],
+            color=line_color, weight=3, dash_array=line_style,
+            tooltip=f"Distancia a {t.nombre}: {t.dist:.0f} m",
+        ).add_to(m)
+        mid_lat, mid_lon = (nw.lat + t.lat) / 2, (nw.lon + t.lon) / 2
+        folium.Marker(
+            [mid_lat, mid_lon],
+            icon=folium.DivIcon(html=f'<div style="font-size:11px;font-weight:700;color:{line_color};background:white;border:1px solid {line_color};border-radius:4px;padding:2px 4px;white-space:nowrap">{t.dist:.0f} m</div>'),
+        ).add_to(m)
     if r:
         folium.GeoJson(to_ll(r["iso"]).__geo_interface__, name=f"Isócrona {t.nombre}",
-                       style_function=lambda f: dict(color="#1d6fd6", fillColor="#1d6fd6", fillOpacity=0.2)).add_to(m)
+                       style_function=lambda f, c=r["color"]: dict(color=c, fillColor=c, fillOpacity=0.20, weight=3),
+                       highlight_function=lambda f, c=r["color"]: dict(color=c, fillOpacity=0.32, weight=4)).add_to(m)
+# Esta capa queda encima para que cada manzana conserve su tooltip de personas y viviendas.
+if manz_map is not None:
+    folium.GeoJson(
+        manz_map,
+        name="Manzanas · personas y viviendas",
+        style_function=lambda f: dict(color="#6b7280", weight=0.7, fillColor="#ffffff", fillOpacity=0.01),
+        highlight_function=lambda f: dict(color="#111827", weight=2, fillColor="#fef3c7", fillOpacity=0.18),
+        tooltip=folium.GeoJsonTooltip(fields=[c_pers, c_viv], aliases=["Personas", "Viviendas"], localize=True, sticky=False),
+        show=True,
+    ).add_to(m)
 folium.LayerControl().add_to(m)
 st_folium(m, height=520, use_container_width=True, returned_objects=[])
 
