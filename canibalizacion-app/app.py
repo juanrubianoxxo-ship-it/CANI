@@ -535,7 +535,7 @@ if manz is None and (remote_layer_url() or st.session_state.get("heavy_layer_pat
 iso_new_raw = make_iso(nw.lat, nw.lon, radio, modo)
 iso_new = align_to_manzanas(iso_new_raw, manz)
 if manz is not None and not manz.empty:
-    st.caption("La isócrona nueva está ajustada a polígonos completos de manzana.")
+    st.caption("La simulación nueva se construye con manzanas completas y se muestra como un polígono general disuelto.")
 
 # --- tiendas cercanas ---
 tiendas["pt"] = [to_m(Point(x, y)) for x, y in zip(tiendas.lon, tiendas.lat)]
@@ -621,7 +621,9 @@ if manz_map is not None:
     folium.GeoJson(
         manz_map,
         name="Manzanas · personas y viviendas",
-        style_function=lambda f: dict(color="#6b7280", weight=0.7, fillColor="#ffffff", fillOpacity=0.01),
+        # Invisible en reposo: no dibuja la cuadrícula manzana por manzana,
+        # pero sigue capturando el cursor para mostrar sus atributos.
+        style_function=lambda f: dict(color="#ffffff", weight=0, fillColor="#ffffff", fillOpacity=0.001),
         highlight_function=lambda f: dict(color="#111827", weight=2, fillColor="#fef3c7", fillOpacity=0.18),
         tooltip=folium.GeoJsonTooltip(fields=[c_pers, c_viv], aliases=["Personas", "Viviendas"], localize=True, sticky=False),
         show=True,
