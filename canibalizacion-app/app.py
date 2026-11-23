@@ -578,10 +578,17 @@ st.success(f"📍 Tienda operando más cercana: **{n0.nombre}** (ID {n0.id}) a *
 st.dataframe(near5[["id", "nombre", "dist"]].rename(columns={"id": "ID", "nombre": "Nombre", "dist": "Distancia (m)"})
              .style.format({"Distancia (m)": "{:,.0f}"}), use_container_width=True, hide_index=True)
 en_radio = tiendas[tiendas.dist <= radio].sort_values("dist")
-cerca = en_radio
 st.caption(f"Tiendas dentro del radio de {radio:,.0f} m: **{len(en_radio)}**")
 if en_radio.empty:
     st.warning("No hay tiendas del archivo dentro del radio seleccionado. Aumenta el radio o revisa las coordenadas.")
+    cerca = en_radio
+    selected_store_id = None
+else:
+    store_options = [f"{r.id} · {r.nombre} · {r.dist:.0f} m" for r in en_radio.itertuples()]
+    selected_store = st.selectbox("Selecciona una tienda operando para analizar su isócrona", store_options, key="selected_store")
+    selected_store_id = str(en_radio.iloc[store_options.index(selected_store)]["id"])
+    cerca = en_radio[en_radio["id"].astype(str) == selected_store_id]
+    st.info(f"Analizando una tienda: **{cerca.iloc[0]['nombre']}**. Puedes cambiarla en el selector.")
 
 up_real = st.file_uploader("(Opcional) Isócronas reales de encuesta O-D (GeoJSON con columna 'id')", type=["geojson"])
 real = gpd.read_file(up_real).to_crs(CRS_M) if up_real else None
@@ -620,7 +627,8 @@ map_stores = tiendas.sort_values("dist")
 for _, t in map_stores.iterrows():
     r = row_by_id.get(str(t.id))
     inside = t.dist <= radio
-    color = "blue" if inside else "gray"
+    is_selected = selected_store_id is not None and str(t.id) == selected_store_id
+    color = "red" if is_selected else ("blue" if inside else "gray")
     line_color = r["color"] if r else "#999999"
     line_style = "6" if inside else "2"
     label = "dentro del radio" if inside else "fuera del radio"
