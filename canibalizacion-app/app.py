@@ -73,6 +73,14 @@ def to_num(s):
     return pd.to_numeric(s.astype(str).str.replace(",", ".", regex=False), errors="coerce")
 
 
+def distance_m(lat1, lon1, lat2, lon2):
+    """Distancia geodésica aproximada en metros, robusta para cualquier zona de Colombia."""
+    lat1, lon1, lat2, lon2 = map(np.radians, [lat1, lon1, lat2, lon2])
+    dlat, dlon = lat2 - lat1, lon2 - lon1
+    a = np.sin(dlat / 2) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2) ** 2
+    return float(2 * 6371000 * np.arcsin(np.sqrt(a)))
+
+
 def to_m(geom, from_crs=4326):
     return gpd.GeoSeries([geom], crs=from_crs).to_crs(CRS_M).iloc[0]
 
@@ -470,6 +478,7 @@ tiendas.columns = ["id", "nombre", "lat", "lon"]
 tiendas["id"] = tiendas["id"].astype(str)
 tiendas["lat"], tiendas["lon"] = to_num(tiendas["lat"]), to_num(tiendas["lon"])
 tiendas = tiendas.dropna(subset=["lat", "lon"])
+tiendas = tiendas[(tiendas.lat.between(-90, 90)) & (tiendas.lon.between(-180, 180))]
 
 # --- tienda nueva ---
 st.subheader("Tienda nueva propuesta")
@@ -501,7 +510,7 @@ iso_new = make_iso(nw.lat, nw.lon, radio, modo)
 
 # --- tiendas cercanas ---
 tiendas["pt"] = [to_m(Point(x, y)) for x, y in zip(tiendas.lon, tiendas.lat)]
-tiendas["dist"] = [new_pt.distance(p) for p in tiendas.pt]
+tiendas["dist"] = [distance_m(nw.lat, nw.lon, y, x) for x, y in zip(tiendas.lon, tiendas.lat)]
 near5 = tiendas.sort_values("dist").head(5)
 if near5.empty:
     st.error("La base de tiendas no tiene coordenadas válidas.")
@@ -547,13 +556,15 @@ folium.Circle([nw.lat, nw.lon], radius=radio, color="#e63946", weight=2, dash_ar
               fill=False, tooltip=f"Radio de referencia: {radio:.0f} m").add_to(m)
 folium.Marker([nw.lat, nw.lon], tooltip=f"NUEVA: {sel}", icon=folium.Icon(color="red", icon="star")).add_to(m)
 row_by_id = {str(r["id"]): r for r in rows}
-map_stores = en_radio
+# Ubicar todas las tiendas del Book; las dentro del radio quedan resaltadas.
+map_stores = tiendas.sort_values("dist")
 for _, t in map_stores.iterrows():
     r = row_by_id.get(str(t.id))
-    color = "blue" if r else "gray"
-    line_color = "#1d6fd6" if r else "#777777"
-    line_style = "6" if r else "4"
-    label = "con traslape" if r else "sin traslape"
+    inside = t.dist <= radio
+    color = "blue" if inside else "gray"
+    line_color = "#1d6fd6" if inside else "#999999"
+    line_style = "6" if inside else "2"
+    label = "dentro del radio" if inside else "fuera del radio"
     folium.Marker(
         [t.lat, t.lon],
         tooltip=f"{t.nombre} · {t.dist:.0f} m · {label}",
@@ -562,7 +573,7 @@ for _, t in map_stores.iterrows():
     ).add_to(m)
     folium.PolyLine(
         [[nw.lat, nw.lon], [t.lat, t.lon]],
-        color=line_color, weight=3 if r else 2, dash_array=line_style,
+        color=line_color, weight=3 if inside else 1, dash_array=line_style,
         tooltip=f"Distancia a {t.nombre}: {t.dist:.0f} m",
     ).add_to(m)
     mid_lat, mid_lon = (nw.lat + t.lat) / 2, (nw.lon + t.lon) / 2
