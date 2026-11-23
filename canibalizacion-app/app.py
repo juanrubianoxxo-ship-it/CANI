@@ -53,6 +53,11 @@ def cop(x):
 
 def guess(cols, keys):
     low = [str(c).lower() for c in cols]
+    # Primero prioriza coincidencias exactas: en el Book, Y=latitud y X=longitud.
+    for k in keys:
+        for i, c in enumerate(low):
+            if c.strip() == k.lower():
+                return i
     for k in keys:
         for i, c in enumerate(low):
             if k in c:
@@ -455,8 +460,8 @@ with st.sidebar.expander("Mapeo de columnas", expanded=True):
     ct = list(df_t.columns)
     c_id = st.selectbox("Tienda: ID", ct, guess(ct, ["id", "cod", "tienda"]))
     c_nom = st.selectbox("Tienda: nombre", ct, guess(ct, ["nombre", "name", "tienda"]))
-    c_lat = st.selectbox("Latitud", ct, guess(ct, ["lat"]))
-    c_lon = st.selectbox("Longitud", ct, guess(ct, ["lon", "lng", "long"]))
+    c_lat = st.selectbox("Latitud (Y)", ct, guess(ct, ["y", "lat", "latitude", "latitud"]))
+    c_lon = st.selectbox("Longitud (X)", ct, guess(ct, ["x", "lon", "lng", "long", "longitude", "longitud"]))
     if manz is not None:
         cm_ = [c for c in manz.columns if c != "geometry"]
         c_pers = st.selectbox("DANE: personas", cm_, guess(cm_, ["tp27_perso", "personas_s", "perso", "pob"]))
@@ -477,6 +482,10 @@ tiendas = df_t[[c_id, c_nom, c_lat, c_lon]].copy()
 tiendas.columns = ["id", "nombre", "lat", "lon"]
 tiendas["id"] = tiendas["id"].astype(str)
 tiendas["lat"], tiendas["lon"] = to_num(tiendas["lat"]), to_num(tiendas["lon"])
+# Si el Book trae X/Y invertidas, corrige automáticamente usando sus rangos geográficos.
+if tiendas["lat"].abs().max() > 90 and tiendas["lon"].abs().max() <= 90:
+    tiendas[["lat", "lon"]] = tiendas[["lon", "lat"]]
+st.caption(f"Coordenadas usadas: **Y → latitud** (`{c_lat}`), **X → longitud** (`{c_lon}`).")
 tiendas = tiendas.dropna(subset=["lat", "lon"])
 tiendas = tiendas[(tiendas.lat.between(-90, 90)) & (tiendas.lon.between(-180, 180))]
 
