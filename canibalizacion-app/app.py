@@ -510,7 +510,11 @@ n0 = near5.iloc[0]
 st.success(f"📍 Tienda operando más cercana: **{n0.nombre}** (ID {n0.id}) a **{n0.dist:.0f} m**")
 st.dataframe(near5[["id", "nombre", "dist"]].rename(columns={"id": "ID", "nombre": "Nombre", "dist": "Distancia (m)"})
              .style.format({"Distancia (m)": "{:,.0f}"}), use_container_width=True, hide_index=True)
-cerca = tiendas[tiendas.dist <= 2 * radio + 50].sort_values("dist")
+en_radio = tiendas[tiendas.dist <= radio].sort_values("dist")
+cerca = en_radio
+st.caption(f"Tiendas dentro del radio de {radio:,.0f} m: **{len(en_radio)}**")
+if en_radio.empty:
+    st.warning("No hay tiendas del archivo dentro del radio seleccionado. Aumenta el radio o revisa las coordenadas.")
 
 up_real = st.file_uploader("(Opcional) Isócronas reales de encuesta O-D (GeoJSON con columna 'id')", type=["geojson"])
 real = gpd.read_file(up_real).to_crs(CRS_M) if up_real else None
@@ -539,9 +543,12 @@ if manz is not None:
                        tooltip=folium.GeoJsonTooltip(fields=[c_pers, c_viv], aliases=["Personas", "Viviendas"])).add_to(m)
 folium.GeoJson(to_ll(iso_new).__geo_interface__, name="Isócrona nueva",
                style_function=lambda f: dict(color="#e63946", fillColor="#e63946", fillOpacity=0.25)).add_to(m)
+folium.Circle([nw.lat, nw.lon], radius=radio, color="#e63946", weight=2, dash_array="6",
+              fill=False, tooltip=f"Radio de referencia: {radio:.0f} m").add_to(m)
 folium.Marker([nw.lat, nw.lon], tooltip=f"NUEVA: {sel}", icon=folium.Icon(color="red", icon="star")).add_to(m)
 row_by_id = {str(r["id"]): r for r in rows}
-for _, t in near5.iterrows():
+map_stores = en_radio
+for _, t in map_stores.iterrows():
     r = row_by_id.get(str(t.id))
     color = "blue" if r else "gray"
     line_color = "#1d6fd6" if r else "#777777"
