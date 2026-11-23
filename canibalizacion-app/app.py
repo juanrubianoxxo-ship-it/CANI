@@ -192,6 +192,13 @@ def get_excel(label: str, secret_key: str, key: str):
     if data is None:
         return None
     xl = pd.ExcelFile(io.BytesIO(data))
+    if key == "ventas":
+        names = {str(s).strip().upper(): s for s in xl.sheet_names}
+        venta_sheet = next((names[n] for n in names if "HISTORICO VENTAS" in n), None)
+        contr_sheet = next((names[n] for n in names if "HISTORICO CONTRIBUCION" in n or "HISTÓRICO CONTRIBUCIÓN" in n), None)
+        if venta_sheet and contr_sheet:
+            st.success(f"✅ Se usarán las hojas **{venta_sheet}** y **{contr_sheet}** del LibroVentas")
+            return {"ventas": xl.parse(venta_sheet), "contribucion": xl.parse(contr_sheet)}
     sheet = st.selectbox("Hoja", xl.sheet_names, key=f"sh_{key}")
     return xl.parse(sheet)
 
@@ -496,11 +503,26 @@ with st.sidebar.expander("Mapeo de columnas", expanded=True):
     else:
         c_pers = c_viv = None
     if df_v is not None:
-        cv = list(df_v.columns)
-        v_id = st.selectbox("Ventas: ID tienda", cv, guess(cv, ["id", "cod", "tienda"]))
-        v_fecha = st.selectbox("Ventas: fecha", cv, guess(cv, ["fecha", "date", "mes", "periodo"]))
-        v_venta = st.selectbox("Ventas: valor venta", cv, guess(cv, ["venta", "sales"]))
-        v_contr = st.selectbox("Ventas: contribución", ["(ninguna)"] + cv, 0)
+        if isinstance(df_v, dict):
+            df_ventas = df_v["ventas"]
+            df_contrib = df_v["contribucion"]
+            cv = list(df_ventas.columns)
+            cc = list(df_contrib.columns)
+            v_id = st.selectbox("Histórico ventas: ID tienda", cv, guess(cv, ["id", "cod", "tienda"]), key="v_id_hist")
+            v_fecha = st.selectbox("Histórico ventas: fecha/mes", cv, guess(cv, ["fecha", "date", "mes", "periodo"]), key="v_fecha_hist")
+            v_venta = st.selectbox("Histórico ventas: valor venta", cv, guess(cv, ["venta", "sales", "valor"]), key="v_venta_hist")
+            c_id_hist = st.selectbox("Histórico contribución: ID tienda", cc, guess(cc, ["id", "cod", "tienda"]), key="c_id_hist")
+            c_fecha_hist = st.selectbox("Histórico contribución: fecha/mes", cc, guess(cc, ["fecha", "date", "mes", "periodo"]), key="c_fecha_hist")
+            c_val_hist = st.selectbox("Histórico contribución: valor", cc, guess(cc, ["contrib", "valor", "venta", "sales"]), key="c_val_hist")
+            v_contr = "__hoja_contribucion__"
+        else:
+            df_ventas = df_v
+            df_contrib = None
+            cv = list(df_v.columns)
+            v_id = st.selectbox("Ventas: ID tienda", cv, guess(cv, ["id", "cod", "tienda"]))
+            v_fecha = st.selectbox("Ventas: fecha", cv, guess(cv, ["fecha", "date", "mes", "periodo"]))
+            v_venta = st.selectbox("Ventas: valor venta", cv, guess(cv, ["venta", "sales"]))
+            v_contr = st.selectbox("Ventas: contribución", ["(ninguna)"] + cv, 0)
 
 tiendas = df_t[[c_id, c_nom, c_lat, c_lon]].copy()
 tiendas.columns = ["id", "nombre", "lat", "lon"]
@@ -672,8 +694,19 @@ if detalle:
 # --- impacto ---
 imp = tot = chart = None
 if df_v is not None:
-    sv = df_v[[v_id, v_fecha, v_venta] + ([v_contr] if v_contr != "(ninguna)" else [])].copy()
-    sv.columns = ["id", "fecha", "venta"] + (["contr"] if v_contr != "(ninguna)" else [])
+    if isinstance(df_v, dict):
+        sv = df_ventas[[v_id, v_fecha, v_venta]].copy()
+        sv.columns = ["id", "fecha", "venta"]
+        sc = df_contrib[[c_id_hist, c_fecha_hist, c_val_hist]].copy()
+        sc.columns = ["id", "fecha", "contr"]
+        sv["id"] = sv["id"].astype(str)
+        sc["id"] = sc["id"].astype(str)
+        sv["fecha"] = pd.to_datetime(sv["fecha"], errors="coerce").dt.to_period("M").astype(str)
+        sc["fecha"] = pd.to_datetime(sc["fecha"], errors="coerce").dt.to_period("M").astype(str)
+        sv = sv.merge(sc, on=["id", "fecha"], how="left")
+    else:
+        sv = df_ventas[[v_id, v_fecha, v_venta] + ([v_contr] if v_contr != "(ninguna)" else [])].copy()
+        sv.columns = ["id", "fecha", "venta"] + (["contr"] if v_contr != "(ninguna)" else [])
     sv["id"] = sv["id"].astype(str)
     sv["fecha"] = pd.to_datetime(sv["fecha"], errors="coerce")
     sv["venta"] = to_num(sv["venta"])
