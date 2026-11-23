@@ -379,14 +379,21 @@ def static_map(new_pt, iso_new, rows, new_name):
 
 
 def sales_chart(piv, pct_map):
-    loss = (piv * pd.Series(pct_map)).sum(axis=1) if not piv.empty else pd.Series(dtype=float)
-    tot = piv.sum(axis=1)
+    if piv is None or piv.empty:
+        piv = pd.DataFrame(index=pd.Index([], name="mes"))
+    piv = piv.copy()
+    piv.columns = [str(c) for c in piv.columns]
+    weights = pd.Series({str(k): float(v) for k, v in pct_map.items()}, dtype=float)
+    weights = weights.reindex(piv.columns).fillna(0.0)
+    loss = piv.mul(weights, axis="columns").sum(axis=1).reindex(piv.index).fillna(0.0)
+    tot = piv.sum(axis=1).reindex(loss.index).fillna(0.0)
     fig, ax = plt.subplots(figsize=(8, 3.8))
-    x = [str(p) for p in tot.index]
-    ax.bar(x, tot - loss, color="#1d6fd6", label="Ventas tras canibalización")
-    ax.bar(x, loss, bottom=tot - loss, color="#e63946", hatch="//", label="Pérdida estimada")
-    for i, v in enumerate(tot):
+    x = np.arange(len(tot))
+    ax.bar(x, (tot - loss).to_numpy(), color="#1d6fd6", label="Ventas tras canibalización")
+    ax.bar(x, loss.to_numpy(), bottom=(tot - loss).to_numpy(), color="#e63946", hatch="//", label="Pérdida estimada")
+    for i, v in enumerate(tot.to_numpy()):
         ax.text(i, v, f"{v/1e6:,.1f} M", ha="center", va="bottom", fontsize=8)
+    ax.set_xticks(x, [str(p) for p in tot.index])
     ax.set_ylabel("Ventas (COP)")
     ax.set_title("Ventas últimos 6 meses – tiendas impactadas")
     ax.yaxis.set_major_formatter(lambda v, _: f"{v/1e6:,.0f} M")
