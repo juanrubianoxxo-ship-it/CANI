@@ -31,6 +31,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from shapely.geometry import Point, shape
+from shapely.ops import unary_union
 from streamlit_folium import st_folium
 
 st.set_page_config(page_title="Canibalización de tiendas", page_icon="🏪", layout="wide")
@@ -299,6 +300,21 @@ def manzanas_in(poly, manz, c_pers, c_viv):
     return sub
 
 
+def align_to_manzanas(poly, manz):
+    """Ajusta una isócrona para que su borde siga polígonos completos de manzana."""
+    if manz is None or manz.empty:
+        return poly
+    idx = manz.sindex.query(poly, predicate="intersects")
+    cand = manz.iloc[idx]
+    if cand.empty:
+        return poly
+    # Una manzana entra completa cuando su punto representativo está dentro del radio.
+    selected = cand[cand.geometry.representative_point().within(poly)]
+    if selected.empty:
+        selected = cand[cand.geometry.intersects(poly)]
+    return unary_union(selected.geometry.tolist())
+
+
 # ----------------------------------------------------------------------------
 # Isócronas
 # ----------------------------------------------------------------------------
@@ -515,7 +531,10 @@ if manz is None and (remote_layer_url() or st.session_state.get("heavy_layer_pat
         else:
             st.error("La capa no contiene TP27_PERSO y TVIVIENDA.")
             manz = None
-iso_new = make_iso(nw.lat, nw.lon, radio, modo)
+iso_new_raw = make_iso(nw.lat, nw.lon, radio, modo)
+iso_new = align_to_manzanas(iso_new_raw, manz)
+if manz is not None and not manz.empty:
+    st.caption("La isócrona nueva está ajustada a polígonos completos de manzana.")
 
 # --- tiendas cercanas ---
 tiendas["pt"] = [to_m(Point(x, y)) for x, y in zip(tiendas.lon, tiendas.lat)]
@@ -539,7 +558,7 @@ real = gpd.read_file(up_real).to_crs(CRS_M) if up_real else None
 
 rows = []
 for _, t in cerca.iterrows():
-    iso = make_iso(t.lat, t.lon, radio, modo)
+    iso = align_to_manzanas(make_iso(t.lat, t.lon, radio, modo), manz)
     if real is not None and "id" in real.columns and (real["id"].astype(str) == t.id).any():
         iso = real[real["id"].astype(str) == t.id].geometry.iloc[0]
     inter = iso.intersection(iso_new)
