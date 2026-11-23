@@ -658,7 +658,9 @@ for r in rows:
     detalle.append({"Tienda operando": r["nombre"], "Habitantes en isócrona": r["pe"], "Viviendas en isócrona": r["ve"],
                     "Habitantes compartidos": r["ps"], "Viviendas compartidas": r["vs"]})
 if detalle:
-    st.dataframe(pd.DataFrame(detalle).style.format("{:,.0f}", subset=pd.IndexSlice[:, 1:]), use_container_width=True, hide_index=True)
+    detalle_df = pd.DataFrame(detalle)
+    detalle_num_cols = list(detalle_df.columns[1:])
+    st.dataframe(detalle_df.style.format("{:,.0f}", subset=detalle_num_cols), use_container_width=True, hide_index=True)
 
 # --- impacto ---
 imp = tot = chart = None
